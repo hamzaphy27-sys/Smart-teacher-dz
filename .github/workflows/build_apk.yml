@@ -48,7 +48,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Clean Android Project & Disable Lint Aborts
+      - name: Generate Clean Android Project with compileSdk 36
         run: |
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
           rm -rf android
@@ -69,6 +69,8 @@ jobs:
           import glob
           for p in glob.glob("android/app/build.gradle*"):
               s = open(p).read()
+              s = s.replace("compileSdk = flutter.compileSdkVersion", "compileSdk = 36")
+              s = s.replace("compileSdkVersion flutter.compileSdkVersion", "compileSdkVersion 36")
               s = s.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
               s = s.replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 23")
               if p.endswith(".kts"):
