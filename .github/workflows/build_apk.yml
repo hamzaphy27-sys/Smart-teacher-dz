@@ -48,14 +48,35 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Modern Android Gradle Wrapper
+      - name: Generate Clean Android Project & Gradle Configuration
         run: |
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
-          rm -rf android/settings.gradle android/build.gradle android/app/build.gradle android/gradle
+          rm -rf android
           flutter create . --platforms=android --project-name smart_teacher_dz --org dz.smartteacher
           rm -f test/widget_test.dart
           cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle*
+          mkdir -p android/app/src/main/res/xml
+          cat << 'EOF' > android/app/src/main/res/xml/file_paths.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <cache-path name="cache" path="." />
+              <files-path name="files" path="." />
+              <external-path name="external" path="." />
+          </paths>
+          EOF
+          echo "org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G" >> android/gradle.properties
+          python3 -c '
+          import glob
+          for p in glob.glob("android/app/build.gradle*"):
+              s = open(p).read()
+              s = s.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
+              s = s.replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 23")
+              if p.endswith(".kts"):
+                  s = s.replace("release {", "release {\n            isMinifyEnabled = false\n            isShrinkResources = false")
+              else:
+                  s = s.replace("release {", "release {\n            minifyEnabled false\n            shrinkResources false")
+              open(p, "w").write(s)
+          '
 
       - name: Install dependencies & generate Drift DB
         run: |
@@ -66,11 +87,12 @@ jobs:
         run: flutter test
 
       - name: Build Release APK
-        run: flutter build apk --release --target-platform android-arm64
+        run: flutter build apk --release --target-platform android-arm64 --no-shrink
 
       - name: Rename and publish APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk SMART_TEACHER_DZ.apk
+          ls -lh SMART_TEACHER_DZ.apk
 
       - name: Publish Direct Download Release
         uses: softprops/action-gh-release@v2
