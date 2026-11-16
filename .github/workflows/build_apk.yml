@@ -48,14 +48,14 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Android Gradle Wrapper
+      - name: Generate Modern Android Gradle Wrapper
         run: |
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
-          cp android/app/build.gradle /tmp/app_build.gradle.bak
+          rm -rf android/settings.gradle android/build.gradle android/app/build.gradle android/gradle
           flutter create . --platforms=android --project-name smart_teacher_dz --org dz.smartteacher
           rm -f test/widget_test.dart
           cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
-          cp /tmp/app_build.gradle.bak android/app/build.gradle
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle*
 
       - name: Install dependencies & generate Drift DB
         run: |
