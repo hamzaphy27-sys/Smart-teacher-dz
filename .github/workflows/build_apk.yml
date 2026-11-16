@@ -39,6 +39,7 @@ jobs:
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
           cp android/app/build.gradle /tmp/app_build.gradle.bak
           flutter create . --platforms=android --project-name smart_teacher_dz --org dz.smartteacher
+          rm -f test/widget_test.dart
           cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
           cp /tmp/app_build.gradle.bak android/app/build.gradle
 
@@ -53,9 +54,13 @@ jobs:
       - name: Build Release APK
         run: flutter build apk --release --target-platform android-arm64
 
+      - name: Rename and publish APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk SMART_TEACHER_DZ.apk
+
       - name: Publish Direct Download Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Smart Teacher DZ v1.0.${{ github.run_number }}
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: SMART_TEACHER_DZ.apk
