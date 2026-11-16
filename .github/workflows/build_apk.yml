@@ -22,39 +22,16 @@ jobs:
           unzip -o SMART_TEACHER_DZ_CLOUD_READY.zip
           cp -r smart_teacher_dz_app/* .
           rm -f lib/data/local/*.g.dart
-          python3 -c '
-          import glob
-
-          # 1. Fix Offset.center.dx in ocr_provider.dart
-          p_ocr = "lib/data/services/ocr_provider.dart"
-          open(p_ocr, "w").write(open(p_ocr).read().replace(".center.x", ".center.dx"))
-
-          # 2. Rename Classes table -> SchoolClasses with explicit @DataClassName("ClassRoom")
-          p_tbl = "lib/data/local/tables/app_tables.dart"
-          s = open(p_tbl).read()
-          s = s.replace("class Classes extends Table", "@DataClassName(\"ClassRoom\")\nclass SchoolClasses extends Table")
-          s = s.replace("references(Classes,", "references(SchoolClasses,")
-          open(p_tbl, "w").write(s)
-
-          # 3. Update all references across lib/ and test/ cleanly
-          for path in glob.glob("lib/**/*.dart", recursive=True) + glob.glob("test/**/*.dart", recursive=True):
-              txt = open(path).read()
-              txt = txt.replace("ClassesCompanion", "SchoolClassesCompanion")
-              txt = txt.replace("tables: [TeacherProfiles, Classes,", "tables: [TeacherProfiles, SchoolClasses,")
-              txt = txt.replace("select(classes)", "select(schoolClasses)")
-              txt = txt.replace("into(classes)", "into(schoolClasses)")
-              txt = txt.replace("delete(classes)", "delete(schoolClasses)")
-              txt = txt.replace("Clazz", "ClassRoom")
-              open(path, "w").write(txt)
-
-          # 4. Ensure ocr_provider import exists in domain_safety_test.dart
-          p_test = "test/domain_safety_test.dart"
-          t = open(p_test).read()
-          imp = "import '\''package:smart_teacher_dz/data/services/ocr_provider.dart'\'';\n"
-          if imp not in t:
-              t = imp + t
-          open(p_test, "w").write(t)
-          '
+          sed -i 's/\.center\.x/.center.dx/g' lib/data/services/ocr_provider.dart
+          sed -i 's/class Classes extends Table/@DataClassName("ClassRoom")\nclass SchoolClasses extends Table/g' lib/data/local/tables/app_tables.dart
+          sed -i 's/references(Classes,/references(SchoolClasses,/g' lib/data/local/tables/app_tables.dart
+          find lib test -name "*.dart" -exec sed -i 's/ClassesCompanion/SchoolClassesCompanion/g' {} +
+          find lib test -name "*.dart" -exec sed -i 's/tables: \[TeacherProfiles, Classes,/tables: [TeacherProfiles, SchoolClasses,/g' {} +
+          find lib test -name "*.dart" -exec sed -i 's/select(classes)/select(schoolClasses)/g' {} +
+          find lib test -name "*.dart" -exec sed -i 's/into(classes)/into(schoolClasses)/g' {} +
+          find lib test -name "*.dart" -exec sed -i 's/delete(classes)/delete(schoolClasses)/g' {} +
+          find lib test -name "*.dart" -exec sed -i 's/Clazz/ClassRoom/g' {} +
+          sed -i '1i import "package:smart_teacher_dz/data/services/ocr_provider.dart";' test/domain_safety_test.dart
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
