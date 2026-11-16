@@ -17,21 +17,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip project files & fix Drift table naming
+      - name: Unzip project files & apply comprehensive fixes
         run: |
           unzip -o SMART_TEACHER_DZ_CLOUD_READY.zip
           cp -r smart_teacher_dz_app/* .
           rm -f lib/data/local/*.g.dart
-          sed -i 's/\.center\.x/.center.dx/g' lib/data/services/ocr_provider.dart
           python3 -c '
-          p = "lib/data/local/tables/app_tables.dart"
-          s = open(p).read()
+          import glob
+
+          # 1. Fix Offset.center.dx in ocr_provider.dart
+          p_ocr = "lib/data/services/ocr_provider.dart"
+          open(p_ocr, "w").write(open(p_ocr).read().replace(".center.x", ".center.dx"))
+
+          # 2. Rename Classes table -> SchoolClasses with explicit @DataClassName("ClassRoom")
+          p_tbl = "lib/data/local/tables/app_tables.dart"
+          s = open(p_tbl).read()
           s = s.replace("class Classes extends Table", "@DataClassName(\"ClassRoom\")\nclass SchoolClasses extends Table")
           s = s.replace("references(Classes,", "references(SchoolClasses,")
-          open(p, "w").write(s)
+          open(p_tbl, "w").write(s)
+
+          # 3. Update all references across lib/ and test/ cleanly
+          for path in glob.glob("lib/**/*.dart", recursive=True) + glob.glob("test/**/*.dart", recursive=True):
+              txt = open(path).read()
+              txt = txt.replace("ClassesCompanion", "SchoolClassesCompanion")
+              txt = txt.replace("tables: [TeacherProfiles, Classes,", "tables: [TeacherProfiles, SchoolClasses,")
+              txt = txt.replace("select(classes)", "select(schoolClasses)")
+              txt = txt.replace("into(classes)", "into(schoolClasses)")
+              txt = txt.replace("delete(classes)", "delete(schoolClasses)")
+              txt = txt.replace("Clazz", "ClassRoom")
+              open(path, "w").write(txt)
           '
-          sed -i 's/Classes/SchoolClasses/g' lib/data/local/app_database.dart lib/data/repositories/classroom_repository.dart lib/data/services/backup_service.dart test/domain_safety_test.dart
-          sed -i 's/Clazz/ClassRoom/g' lib/data/local/app_database.dart lib/data/repositories/classroom_repository.dart lib/features/home/home_screen.dart lib/features/classes/class_detail_screen.dart lib/features/reports/bilan_trimestriel_screen.dart lib/features/scan/scan_screen.dart
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -58,6 +73,9 @@ jobs:
         run: |
           flutter pub get
           dart run build_runner build --delete-conflicting-outputs
+
+      - name: Check entire project for any remaining Dart errors
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Run automated tests
         run: flutter test
