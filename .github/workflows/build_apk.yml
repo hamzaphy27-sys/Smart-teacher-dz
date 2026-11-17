@@ -56,23 +56,24 @@ jobs:
           rm -f test/widget_test.dart
           cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
           mkdir -p android/app/src/main/res/xml
-          cat << 'EOF' > android/app/src/main/res/xml/file_paths.xml
+          cat << 'XMLEOF' > android/app/src/main/res/xml/file_paths.xml
           <?xml version="1.0" encoding="utf-8"?>
           <paths xmlns:android="http://schemas.android.com/apk/res/android">
               <cache-path name="cache" path="." />
               <files-path name="files" path="." />
               <external-path name="external" path="." />
           </paths>
-          EOF
+          XMLEOF
           echo "org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G" >> android/gradle.properties
-          python3 -c '
-          import glob
+          echo "flutter.compileSdkVersion=36" >> android/local.properties
+          cat << 'PYEOF' > /tmp/fix_gradle.py
+          import glob, re
           for p in glob.glob("android/app/build.gradle*"):
               s = open(p).read()
-              s = s.replace("compileSdk = flutter.compileSdkVersion", "compileSdk = 36")
-              s = s.replace("compileSdkVersion flutter.compileSdkVersion", "compileSdkVersion 36")
-              s = s.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
-              s = s.replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 23")
+              s = re.sub(r'compileSdk\s*=\s*[^\n]+', 'compileSdk = 36', s)
+              s = re.sub(r'compileSdkVersion\s+[^\n]+', 'compileSdkVersion 36', s)
+              s = re.sub(r'minSdk\s*=\s*[^\n]+', 'minSdk = 23', s)
+              s = re.sub(r'minSdkVersion\s+[^\n]+', 'minSdkVersion 23', s)
               if p.endswith(".kts"):
                   s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }")
                   s = s.replace("release {", "release {\n            isMinifyEnabled = false\n            isShrinkResources = false")
@@ -80,7 +81,10 @@ jobs:
                   s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }")
                   s = s.replace("release {", "release {\n            minifyEnabled false\n            shrinkResources false")
               open(p, "w").write(s)
-          '
+              print("Updated:", p)
+          PYEOF
+          python3 /tmp/fix_gradle.py
+          grep -n "compileSdk" android/app/build.gradle*
 
       - name: Install dependencies & generate Drift DB
         run: |
@@ -99,6 +103,12 @@ jobs:
           APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
           cp "$APK_FILE" SMART_TEACHER_DZ.apk
           ls -lh SMART_TEACHER_DZ.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMART_TEACHER_DZ_APK
+          path: SMART_TEACHER_DZ.apk
 
       - name: Publish Direct Download Release
         uses: softprops/action-gh-release@v2
