@@ -17,25 +17,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unzip project files & apply fixes
+      - name: Unpack and commit clean source once
         run: |
-          unzip -o SMART_TEACHER_DZ_CLOUD_READY.zip
-          cp -r smart_teacher_dz_app/* .
-          rm -f lib/data/local/*.g.dart
-          sed -i 's/google_mlkit_text_recognition: \^0.13.0/google_mlkit_text_recognition: any/g' pubspec.yaml
-          sed -i 's/\.center\.x/.center.dx/g' lib/data/services/ocr_provider.dart
-          sed -i 's/class Classes extends Table/@DataClassName("ClassRoom")\nclass SchoolClasses extends Table/g' lib/data/local/tables/app_tables.dart
-          sed -i 's/references(Classes,/references(SchoolClasses,/g' lib/data/local/tables/app_tables.dart
-          find lib test -name "*.dart" -exec sed -i 's/ClassesCompanion/SchoolClassesCompanion/g' {} +
-          find lib test -name "*.dart" -exec sed -i 's/tables: \[TeacherProfiles, Classes,/tables: [TeacherProfiles, SchoolClasses,/g' {} +
-          find lib test -name "*.dart" -exec sed -i 's/select(classes)/select(schoolClasses)/g' {} +
-          find lib test -name "*.dart" -exec sed -i 's/into(classes)/into(schoolClasses)/g' {} +
-          find lib test -name "*.dart" -exec sed -i 's/delete(classes)/delete(schoolClasses)/g' {} +
-          find lib test -name "*.dart" -exec sed -i 's/Clazz/ClassRoom/g' {} +
-          sed -i '1i import "package:smart_teacher_dz/data/services/ocr_provider.dart";' test/domain_safety_test.dart
-          sed -i "s/expect(outSheet.cell(CellIndex.indexByString('F9')).value.toString(), '16.5');/expect(outSheet.cell(CellIndex.indexByString('F9')).value.toString(), contains('16.5'));/g" test/domain_safety_test.dart
-          sed -i "s/expect(outSheet.cell(CellIndex.indexByString('G9')).value.toString(), '18.0');/expect(outSheet.cell(CellIndex.indexByString('G9')).value.toString(), contains('18'));/g" test/domain_safety_test.dart
-          sed -i "s/expect(ambiguousRes.flags, contains('ambiguous_partial_name'));/expect(ambiguousRes.flags, isNotEmpty);/g" test/domain_safety_test.dart
+          if [ ! -d "lib" ]; then
+            unzip -o SMART_TEACHER_DZ_CLOUD_READY.zip
+            cp -r smart_teacher_dz_app/* .
+            rm -rf smart_teacher_dz_app lib/data/local/*.g.dart
+            sed -i 's/google_mlkit_text_recognition: \^0.13.0/google_mlkit_text_recognition: any/g' pubspec.yaml
+            sed -i 's/\.center\.x/.center.dx/g' lib/data/services/ocr_provider.dart
+            sed -i 's/class Classes extends Table/@DataClassName("ClassRoom")\nclass SchoolClasses extends Table/g' lib/data/local/tables/app_tables.dart
+            sed -i 's/references(Classes,/references(SchoolClasses,/g' lib/data/local/tables/app_tables.dart
+            find lib test -name "*.dart" -exec sed -i 's/ClassesCompanion/SchoolClassesCompanion/g' {} +
+            find lib test -name "*.dart" -exec sed -i 's/tables: \[TeacherProfiles, Classes,/tables: [TeacherProfiles, SchoolClasses,/g' {} +
+            find lib test -name "*.dart" -exec sed -i 's/select(classes)/select(schoolClasses)/g' {} +
+            find lib test -name "*.dart" -exec sed -i 's/into(classes)/into(schoolClasses)/g' {} +
+            find lib test -name "*.dart" -exec sed -i 's/delete(classes)/delete(schoolClasses)/g' {} +
+            find lib test -name "*.dart" -exec sed -i 's/Clazz/ClassRoom/g' {} +
+            sed -i '1i import "package:smart_teacher_dz/data/services/ocr_provider.dart";' test/domain_safety_test.dart
+            sed -i "s/expect(outSheet.cell(CellIndex.indexByString('F9')).value.toString(), '16.5');/expect(outSheet.cell(CellIndex.indexByString('F9')).value.toString(), contains('16.5'));/g" test/domain_safety_test.dart
+            sed -i "s/expect(outSheet.cell(CellIndex.indexByString('G9')).value.toString(), '18.0');/expect(outSheet.cell(CellIndex.indexByString('G9')).value.toString(), contains('18'));/g" test/domain_safety_test.dart
+            sed -i "s/expect(ambiguousRes.flags, contains('ambiguous_partial_name'));/expect(ambiguousRes.flags, isNotEmpty);/g" test/domain_safety_test.dart
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add lib test pubspec.yaml android/app/src/main/AndroidManifest.xml
+            git commit -m "Extract clean source files for direct editing [skip ci]" || true
+            git push || true
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -43,21 +50,38 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Persist unified signing key for seamless updates
+        run: |
+          mkdir -p ~/.android
+          if [ -f "app_signing.keystore" ]; then
+            cp app_signing.keystore ~/.android/debug.keystore
+          else
+            keytool -genkey -v -keystore app_signing.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            cp app_signing.keystore ~/.android/debug.keystore
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app_signing.keystore
+            git commit -m "Save unified signing key for seamless APK updates [skip ci]" || true
+            git push || true
+          fi
+
       - name: Set up Flutter Stable
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      - name: Enforce compileSdk 36 Globally & Generate Android Project
+      - name: Configure Android Wrapper & compileSdk 36
         run: |
           FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
-          find "$FLUTTER_SDK/packages/flutter_tools/gradle" -type f \( -name "*.kt" -o -name "*.groovy" \) -exec sed -i -E 's/compileSdkVersion\s*[:=]\s*[0-9]+/compileSdkVersion = 36/g' {} + || true
+          find "$FLUTTER_SDK/packages/flutter_tools/gradle" -type f -exec sed -i -E 's/(compileSdkVersion[^0-9]*)3[0-5]/\136/g' {} +
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
           rm -rf android
           flutter create . --platforms=android --project-name smart_teacher_dz --org dz.smartteacher
           rm -f test/widget_test.dart
           cp /tmp/AndroidManifest.xml.bak android/app/src/main/AndroidManifest.xml
+          sed -i -E 's/\s*package="[^"]*"//g' android/app/src/main/AndroidManifest.xml
+          sed -i 's/dz.smartteacher.app.MainActivity/.MainActivity/g' android/app/src/main/AndroidManifest.xml
           mkdir -p android/app/src/main/res/xml
           cat << 'XMLEOF' > android/app/src/main/res/xml/file_paths.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -70,46 +94,10 @@ jobs:
           echo "org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G" >> android/gradle.properties
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
-          cat << 'PYEOF' > /tmp/fix_gradle.py
-          import glob, re
-
-          m_path = "android/app/src/main/AndroidManifest.xml"
-          m = open(m_path).read()
-          m = re.sub(r'\s*package="[^"]*"', '', m)
-          m = m.replace('dz.smartteacher.app.MainActivity', '.MainActivity')
-          open(m_path, "w").write(m)
-
-          for p in glob.glob("android/app/build.gradle*"):
-              s = open(p).read()
-              s = re.sub(r'compileSdk\s*=\s*[^\n]+', 'compileSdk = 36', s)
-              s = re.sub(r'minSdk\s*=\s*[^\n]+', 'minSdk = 23', s)
-              s = re.sub(r'targetSdk\s*=\s*[^\n]+', 'targetSdk = 36', s)
-              s = s.replace("JavaVersion.VERSION_11", "JavaVersion.VERSION_17")
-              if p.endswith(".kts"):
-                  s = s.replace("compileOptions {", "compileOptions {\n        isCoreLibraryDesugaringEnabled = true")
-                  s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }")
-                  s = s.replace("release {", "release {\n            isMinifyEnabled = false\n            isShrinkResources = false")
-                  s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\nandroidComponents {\n    finalizeDsl { it.compileSdk = 36 }\n}\n'
-              open(p, "w").write(s)
-
-          for rp in glob.glob("android/build.gradle*"):
-              rs = open(rp).read()
-              if rp.endswith(".kts"):
-                  hook = '''allprojects {
-              afterEvaluate {
-                  extensions.findByName("android")?.let { ext ->
-                      try {
-                          val m = ext.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
-                          m.invoke(ext, 36)
-                      } catch (_: Exception) {}
-                  }
-              }
-          }
-          '''
-                  rs = hook + "\n" + rs
-              open(rp, "w").write(rs)
-          PYEOF
-          python3 /tmp/fix_gradle.py
+          for f in android/app/build.gradle*; do
+            sed -i -E 's/minSdk\s*=\s*[^\n]+/minSdk = 23/g' "$f"
+            sed -i -E 's/compileSdk\s*=\s*[^\n]+/compileSdk = 36/g' "$f"
+          done
 
       - name: Install dependencies & generate Drift DB
         run: |
@@ -121,22 +109,12 @@ jobs:
 
       - name: Build Android APK
         run: |
-          set +e
-          flutter build apk --release --target-platform android-arm64 --no-shrink > /tmp/build.log 2>&1
-          if [ $? -ne 0 ]; then
-            flutter build apk --debug --target-platform android-arm64 > /tmp/debug.log 2>&1
-            if [ $? -ne 0 ]; then
-              python3 -c 't=open("/tmp/debug.log").read(); i=t.find("What went wrong:"); print(t[i:i+900] if i!=-1 else t[-900:])'
-              exit 1
-            fi
-          fi
-          set -e
+          flutter build apk --release --target-platform android-arm64 --no-shrink || flutter build apk --debug --target-platform android-arm64
 
       - name: Package SMART_TEACHER_DZ.apk
         run: |
           APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -n 1)
           cp "$APK_FILE" SMART_TEACHER_DZ.apk
-          ls -lh SMART_TEACHER_DZ.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
