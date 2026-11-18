@@ -49,8 +49,10 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Clean Android Project with Desugaring & compileSdk 36
+      - name: Enforce compileSdk 36 Globally & Generate Android Project
         run: |
+          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
+          find "$FLUTTER_SDK/packages/flutter_tools/gradle" -type f \( -name "*.kt" -o -name "*.groovy" \) -exec sed -i -E 's/compileSdkVersion\s*[:=]\s*[0-9]+/compileSdkVersion = 36/g' {} + || true
           cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml.bak
           rm -rf android
           flutter create . --platforms=android --project-name smart_teacher_dz --org dz.smartteacher
@@ -88,17 +90,23 @@ jobs:
                   s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }")
                   s = s.replace("release {", "release {\n            isMinifyEnabled = false\n            isShrinkResources = false")
                   s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\nandroidComponents {\n    finalizeDsl { it.compileSdk = 36 }\n}\n'
-              else:
-                  s = s.replace("compileOptions {", "compileOptions {\n        coreLibraryDesugaringEnabled true")
-                  s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }")
-                  s = s.replace("release {", "release {\n            minifyEnabled false\n            shrinkResources false")
-                  s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\nandroidComponents {\n    finalizeDsl { it.compileSdk = 36 }\n}\n'
               open(p, "w").write(s)
 
           for rp in glob.glob("android/build.gradle*"):
               rs = open(rp).read()
               if rp.endswith(".kts"):
-                  rs += '\nsubprojects {\n    plugins.withId("com.android.library") {\n        extensions.configure<com.android.build.api.dsl.LibraryExtension> {\n            compileSdk = 36\n        }\n    }\n}\n'
+                  hook = '''allprojects {
+              afterEvaluate {
+                  extensions.findByName("android")?.let { ext ->
+                      try {
+                          val m = ext.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
+                          m.invoke(ext, 36)
+                      } catch (_: Exception) {}
+                  }
+              }
+          }
+          '''
+                  rs = hook + "\n" + rs
               open(rp, "w").write(rs)
           PYEOF
           python3 /tmp/fix_gradle.py
@@ -116,12 +124,9 @@ jobs:
           set +e
           flutter build apk --release --target-platform android-arm64 --no-shrink > /tmp/build.log 2>&1
           if [ $? -ne 0 ]; then
-            echo "=== RELEASE LOG ==="
-            python3 -c 't=open("/tmp/build.log").read(); i=t.find("FAILURE:"); print(t[i:i+2000] if i!=-1 else t[-2000:])'
             flutter build apk --debug --target-platform android-arm64 > /tmp/debug.log 2>&1
             if [ $? -ne 0 ]; then
-              echo "=== DEBUG LOG ==="
-              python3 -c 't=open("/tmp/debug.log").read(); i=t.find("FAILURE:"); print(t[i:i+2000] if i!=-1 else t[-2000:])'
+              python3 -c 't=open("/tmp/debug.log").read(); i=t.find("What went wrong:"); print(t[i:i+900] if i!=-1 else t[-900:])'
               exit 1
             fi
           fi
